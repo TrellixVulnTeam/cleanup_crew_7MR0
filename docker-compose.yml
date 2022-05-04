@@ -1,0 +1,65 @@
+version: '3'
+services:
+  cleaner-bot:
+    image: cleaner-bot
+    build: ./bot
+    container_name: cleaner-bot
+    volumes:
+      - replay_data:/replays
+      - ./bot/app:/app
+      - ./raw_data:/outputs
+    depends_on:
+      - postgres
+      - rocketmq
+      - rocketredis
+  postgres:
+    image: postgres
+    container_name: cleaner-postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: cleaner
+      POSTGRES_PASSWORD: cleanpass
+      POSTGRES_DB: cleaner
+    ports:
+      - '5432:5432'
+  rocketredis:
+    image: bitnami/redis:latest
+    container_name: rocketredis
+    volumes:
+      - ./.docker/redis-persistence:/bitnami/redis/data
+    environment:
+      REDIS_PASSWORD: cleanpass
+    ports:
+      - '6379:6379'
+  rocketmq:
+    image: bitnami/rabbitmq:latest
+    container_name: rabbitmq
+    volumes:
+      - ./.docker/rabbitmq-persistence:/bitnami
+    environment:
+      RABBITMQ_USERNAME: cleaner
+      RABBITMQ_PASSWORD: cleanpass
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+  rocketstats:
+    build: ./worker
+    container_name: rocketstats
+    depends_on:
+      - rocketredis
+      - rocketmq
+    volumes:
+      - replay_data:/replays
+  rocketflower:
+    build: ./worker
+    container_name: rocketflower
+    depends_on:
+      - rocketredis
+      - rocketmq
+    ports:
+      - '5555:5555'
+    command: bash -c "celery -A app.celery flower -b=amqp://cleaner:cleanpass@rocketmq:5672// --result-backend=redis://:cleanpass@rocketredis:6379/0"
+volumes:
+  replay_data:
+  pgdata:
